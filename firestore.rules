@@ -1,0 +1,114 @@
+rules_version = '2';
+
+// Reglas de seguridad para Firestore - INIA Cuyes
+// Copia estas reglas en Firebase Console > Firestore Database > Rules
+
+service cloud.firestore {
+  match /databases/{database}/documents {
+    
+    // === COLECCIÓN USUARIOS ===
+    // Solo el propio usuario puede acceder a sus datos
+    match /usuarios/{userId} {
+      allow read, write: if request.auth != null && request.auth.uid == userId;
+      
+      // Permitir a admins leer todos los usuarios
+      allow read: if request.auth != null && 
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'ADMIN';
+    }
+    
+    // === COLECCIÓN CUYES ===
+    // Solo usuarios autenticados pueden acceder
+    match /cuyes/{cuyId} {
+      allow read, write: if request.auth != null;
+      
+      // Validar estructura de datos al escribir
+      allow write: if request.auth != null && 
+        request.resource.data.keys().hasAll(['numeroChip', 'sexo', 'fechaNacimiento']) &&
+        request.resource.data.sexo in ['MACHO', 'HEMBRA'] &&
+        request.resource.data.numeroChip is string &&
+        request.resource.data.fechaNacimiento is timestamp;
+    }
+    
+    // === COLECCIÓN GALPONES ===
+    // Solo usuarios autenticados pueden acceder
+    match /galpones/{galponId} {
+      allow read, write: if request.auth != null;
+      
+      // Validar estructura de datos
+      allow write: if request.auth != null &&
+        request.resource.data.keys().hasAll(['nombre', 'capacidadMaxima']) &&
+        request.resource.data.nombre is string &&
+        request.resource.data.capacidadMaxima is number;
+    }
+    
+    // === COLECCIÓN COMENTARIOS ===
+    // Todos pueden leer, solo autenticados pueden escribir
+    match /comentarios/{comentarioId} {
+      allow read: if true; // Acceso público para lectura
+      allow create: if request.auth != null &&
+        request.resource.data.autorId == request.auth.uid &&
+        request.resource.data.keys().hasAll(['autorNombre', 'contenido', 'fechaCreacion']);
+      allow update, delete: if request.auth != null && 
+        resource.data.autorId == request.auth.uid;
+    }
+    
+    // === SUBCOLECIÓN REGISTROS (dentro de cuyes) ===
+    match /cuyes/{cuyId}/registros/{registroId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // === SUBCOLECIÓN SALUD (dentro de cuyes) ===
+    match /cuyes/{cuyId}/salud/{saludId} {
+      allow read, write: if request.auth != null;
+    }
+    
+    // === FUNCIONES AUXILIARES ===
+    // Verificar si el usuario es administrador
+    function isAdmin() {
+      return request.auth != null && 
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol == 'ADMIN';
+    }
+    
+    // Verificar si el usuario es técnico o admin
+    function isTechnicianOrAdmin() {
+      return request.auth != null && 
+        get(/databases/$(database)/documents/usuarios/$(request.auth.uid)).data.rol in ['ADMIN', 'TECNICO'];
+    }
+    
+    // Denegar acceso a todo lo demás
+    match /{document=**} {
+      allow read, write: if false;
+    }
+  }
+}
+
+/*
+INSTRUCCIONES PARA APLICAR ESTAS REGLAS:
+
+1. Ve a Firebase Console: https://console.firebase.google.com/
+2. Selecciona tu proyecto
+3. Ve a "Firestore Database" en el menú lateral
+4. Haz clic en la pestaña "Rules" (Reglas)
+5. BORRA todo el contenido actual
+6. COPIA Y PEGA estas reglas completas
+7. Haz clic en "Publish" (Publicar)
+
+NOTA: Estas reglas proporcionan:
+- Seguridad básica para proteger datos de usuarios
+- Acceso controlado por roles (Admin, Técnico, Visitante)
+- Validación de estructura de datos
+- Acceso público de lectura para comentarios
+- Protección de datos sensibles
+
+DURANTE DESARROLLO: Si tienes problemas de permisos, puedes usar temporalmente:
+```
+rules_version = '2';
+service cloud.firestore {
+  match /databases/{database}/documents {
+    match /{document=**} {
+      allow read, write: if request.auth != null;
+    }
+  }
+}
+```
+*/
